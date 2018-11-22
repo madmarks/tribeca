@@ -1,5 +1,4 @@
 /// <reference path="../../common/models.ts" />
-/// <reference path="../../../typings/tsd.d.ts" />
 
 import StyleHelpers = require("./helpers");
 import Models = require("../../common/models");
@@ -8,7 +7,7 @@ import _ = require("lodash");
 class NullQuoteGenerator implements StyleHelpers.QuoteStyle {
 	Mode = null;
     
-    GenerateQuote = (market: Models.Market, fv: Models.FairValue, params: Models.QuotingParameters) : StyleHelpers.GeneratedQuote => {
+    GenerateQuote = (input: StyleHelpers.QuoteInput) : StyleHelpers.GeneratedQuote|null => {
 		return null;
 	};
 }

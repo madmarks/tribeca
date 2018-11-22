@@ -1,4 +1,3 @@
-/// <reference path="../../typings/tsd.d.ts" />
 /// <reference path="../common/models.ts" />
 /// <reference path="orderlist.ts"/>
 /// <reference path="trades.ts"/>
@@ -39,6 +38,7 @@ interface MainWindowScope extends ng.IScope {
     pair : Pair.DisplayPair;
     exch_name : string;
     pair_name : string;
+    cancelAllOrders();
 }
 
 class DisplayOrder {
@@ -52,7 +52,7 @@ class DisplayOrder {
     availableTifs : string[];
     availableOrderTypes : string[];
 
-    private static getNames<T>(enumObject : T) {
+    private static getNames(enumObject : any) {
         var names : string[] = [];
         for (var mem in enumObject) {
             if (!enumObject.hasOwnProperty(mem)) continue;
@@ -83,7 +83,12 @@ var uiCtrl = ($scope : MainWindowScope,
               $timeout : ng.ITimeoutService,
               $log : ng.ILogService,
               subscriberFactory : Shared.SubscriberFactory,
-              fireFactory : Shared.FireFactory) => {
+              fireFactory : Shared.FireFactory,
+              product: Shared.ProductState) => {
+    
+    var cancelAllFirer = fireFactory.getFire(Messaging.Topics.CancelAllOrders);
+    $scope.cancelAllOrders = () => cancelAllFirer.fire(new Models.CancelAllOrdersRequest());
+                  
     $scope.order = new DisplayOrder(fireFactory, $log);
     $scope.pair = null;
 
@@ -94,23 +99,29 @@ var uiCtrl = ($scope : MainWindowScope,
         $scope.pair_name = Models.Currency[pa.pair.base] + "/" + Models.Currency[pa.pair.quote];
         $scope.exch_name = Models.Exchange[pa.exchange];
         $scope.pair = new Pair.DisplayPair($scope, subscriberFactory, fireFactory);
+        product.advert = pa;
+        product.fixed = -1*Math.floor(Math.log10(pa.minTick)); 
     };
 
-    var reset = (reason : string) => {
+    var reset = (reason : string, connected: boolean) => {
         $log.info("reset", reason);
-        $scope.connected = false;
-        $scope.pair_name = null;
-        $scope.exch_name = null;
+        $scope.connected = connected;
 
-        if ($scope.pair !== null)
-            $scope.pair.dispose();
-        $scope.pair = null;
+        if (connected) {
+            $scope.pair_name = null;
+            $scope.exch_name = null;
+
+            if ($scope.pair !== null)
+                $scope.pair.dispose();
+            $scope.pair = null;
+        }
     };
-    reset("startup");
+    reset("startup", false);
 
     var sub = subscriberFactory.getSubscriber($scope, Messaging.Topics.ProductAdvertisement)
         .registerSubscriber(onAdvert, a => a.forEach(onAdvert))
-        .registerDisconnectedHandler(() => reset("disconnect"));
+        .registerConnectHandler(() => reset("connect", true))
+        .registerDisconnectedHandler(() => reset("disconnect", false));
 
     $scope.$on('$destroy', () => {
         sub.disconnect();

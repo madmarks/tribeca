@@ -9,12 +9,13 @@ import _ = require('lodash');
 import request = require('request');
 import Models = require("../../common/models");
 import moment = require("moment");
+import log from "../logging";
 
 var HttpsAgent = require('agentkeepalive').HttpsAgent;
 var EventEmitter = require('events').EventEmitter;
 import WebSocket = require('ws');
 
-var coinbaseLog = Utils.log("tribeca:gateway:coinbase-api");
+var coinbaseLog = log("tribeca:gateway:coinbase-api");
 
 var keepaliveAgent = new HttpsAgent();
 
@@ -46,10 +47,8 @@ PublicClient.prototype = new function() {
 
     prototype.makeRequestCallback = function(callback) {
         return function(err, response, data) {
-            try {
+            if (typeof data === "string") {
                 data = JSON.parse(data);
-            } catch (e) {
-                data = null
             }
             callback(err, response, data);
         };
@@ -217,6 +216,11 @@ _.assign(AuthenticatedClient.prototype, new function() {
         var self = this;
         return prototype.delete.call(self, ['orders', orderID], callback);
     };
+    
+    prototype.cancelAllOrders = function(callback) {
+        var self = this;
+        return prototype.delete.call(self, ['orders'], callback);
+    };
 
     prototype.getOrders = function(callback) {
         var self = this;
@@ -294,7 +298,7 @@ _.assign(OrderBook.prototype, new function() {
     };
 
     prototype.connect = function() {
-        coinbaseLog("Starting connect");
+        coinbaseLog.info("Starting connect");
         var self = this;
         if (self.socket) {
             self.socket.close();
@@ -337,7 +341,7 @@ _.assign(OrderBook.prototype, new function() {
         }
 
         var sc = { 'old': oldState, 'new': newState };
-        coinbaseLog("statechange: ", sc);
+        coinbaseLog.info("statechange: ", sc);
         self.emit('statechange', sc);
     };
 
@@ -405,11 +409,11 @@ _.assign(OrderBook.prototype, new function() {
         }, function(err, response, body) {
                 if (err) {
                     self.changeState(self.STATES.error);
-                    coinbaseLog("error: Failed to load snapshot: " + err);
+                    coinbaseLog.error(err, "error: Failed to load snapshot");
                 }
                 else if (response.statusCode !== 200) {
                     self.changeState(self.STATES.error);
-                    coinbaseLog("error: Failed to load snapshot: " + response.statusCode);
+                    coinbaseLog.error("Failed to load snapshot", response.statusCode);
                 }
                 else {
                     load(JSON.parse(body));
@@ -417,7 +421,7 @@ _.assign(OrderBook.prototype, new function() {
             });
     };
 
-    prototype.processMessage = function(message, t: moment.Moment) {
+    prototype.processMessage = function(message, t: Date) {
         var self = this;
         if (message.sequence <= self.book.sequence) {
             self.emit('ignored', message);
@@ -425,7 +429,7 @@ _.assign(OrderBook.prototype, new function() {
         }
         if (message.sequence != self.book.sequence + 1) {
             self.changeState(self.STATES.error);
-            coinbaseLog("error: Received message out of order, expected", self.book.sequence, "but got", message.sequence);
+            coinbaseLog.warn("Received message out of order, expected", self.book.sequence, "but got", message.sequence);
         }
         self.book.sequence = message.sequence;
 

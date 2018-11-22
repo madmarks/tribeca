@@ -6,6 +6,7 @@
     "WebClientUsername": "NULL",
     "WebClientPassword": "NULL",
     "WebClientListenPort": "3000",
+    "ShowAllOrders": "true",
     
     "HitBtcPullUrl": "http://demo-api.hitbtc.com",
     "HitBtcOrderEntryUrl": "ws://demo-api.hitbtc.com:8080",
@@ -15,8 +16,8 @@
     "HitBtcSecret": "NULL",
     "HitBtcOrderDestination": "HitBtc",
     
-    "CoinbaseRestUrl": "https://api-public.sandbox.exchange.coinbase.com",
-    "CoinbaseWebsocketUrl": "https://ws-feed-public.sandbox.exchange.coinbase.com",
+    "CoinbaseRestUrl": "https://api-public.sandbox.gdax.com",
+    "CoinbaseWebsocketUrl": "wss://ws-feed-public.sandbox.gdax.com",
     "CoinbasePassphrase": "NULL",
     "CoinbaseApiKey": "NULL",
     "CoinbaseSecret": "NULL",

@@ -33,7 +33,7 @@ export class FairValueEngine {
     public set latestFairValue(val: Models.FairValue) {
         if (this._latest != null
             && val != null
-            && Math.abs(this._latest.price - val.price) < 0.02) return;
+            && Math.abs(this._latest.price - val.price) < this._details.minTickIncrement) return;
 
         this._latest = val;
         this.FairValueChanged.trigger();
@@ -44,6 +44,7 @@ export class FairValueEngine {
     }
 
     constructor(
+        private _details: Interfaces.IBroker,
         private _timeProvider: Utils.ITimeProvider,
         private _filtration: MarketFiltration.MarketFiltration,
         private _qlParamRepo: QuotingParameters.QuotingParametersRepository, // should not co-mingle these settings
@@ -60,17 +61,15 @@ export class FairValueEngine {
                 return (ask.price + bid.price) / 2.0;
             case Models.FairValueModel.wBBO:
                 return (ask.price * ask.size + bid.price * bid.size) / (ask.size + bid.size);
-            default:
-                throw new Error(Models.FairValueModel[model]);
         }
     }
 
-    private static ComputeFV(ask: Models.MarketSide, bid: Models.MarketSide, model: Models.FairValueModel) {
+    private ComputeFV(ask: Models.MarketSide, bid: Models.MarketSide, model: Models.FairValueModel) {
         var unrounded = FairValueEngine.ComputeFVUnrounded(ask, bid, model);
-        return Utils.roundFloat(unrounded);
+        return Utils.roundNearest(unrounded, this._details.minTickIncrement);
     }
 
-    private recalcFairValue = (t: moment.Moment) => {
+    private recalcFairValue = (t: Date) => {
         var mkt = this._filtration.latestFilteredMarket;
 
         if (mkt == null) {
@@ -86,7 +85,7 @@ export class FairValueEngine {
             return;
         }
 
-        var fv = new Models.FairValue(FairValueEngine.ComputeFV(ask[0], bid[0], this._qlParamRepo.latest.fvModel), t);
+        var fv = new Models.FairValue(this.ComputeFV(ask[0], bid[0], this._qlParamRepo.latest.fvModel), t);
         this.latestFairValue = fv;
     };
 }

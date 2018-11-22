@@ -1,4 +1,3 @@
-/// <reference path="../../typings/tsd.d.ts" />
 /// <reference path="../common/models.ts" />
 /// <reference path="../common/messaging.ts" />
 /// <reference path="shared_directives.ts"/>
@@ -24,7 +23,7 @@ var TargetBasePositionController = ($scope : TargetBasePositionScope, $log : ng.
     };
 
     var subscriber = subscriberFactory.getSubscriber($scope, Messaging.Topics.TargetBasePosition)
-        .registerDisconnectedHandler(() => $scope.targetBasePosition = null)
+        .registerConnectHandler(() => $scope.targetBasePosition = null)
         .registerSubscriber(update, us => us.forEach(update));
 
     $scope.$on('$destroy', () => {

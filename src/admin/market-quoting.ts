@@ -1,4 +1,3 @@
-/// <reference path="../../typings/tsd.d.ts" />
 /// <reference path="../common/models.ts" />
 /// <reference path="../common/messaging.ts" />
 /// <reference path="shared_directives.ts"/>
@@ -11,9 +10,9 @@ import Messaging = require("../common/messaging");
 import Shared = require("./shared_directives");
 
 class Level {
-    bidPrice: number;
+    bidPrice: string;
     bidSize: number;
-    askPrice: number;
+    askPrice: string;
     askSize: number;
 
     bidClass: string;
@@ -23,19 +22,25 @@ class Level {
 interface MarketQuotingScope extends ng.IScope {
     levels: Level[];
     qBidSz: number;
-    qBidPx: number;
-    fairValue: number;
-    qAskPx: number;
+    qBidPx: string;
+    fairValue: string;
+    spreadValue: string;
+    qAskPx: string;
     qAskSz: number;
-    extVal: number;
+    extVal: string;
 
     bidIsLive: boolean;
     askIsLive: boolean;
 }
 
 var MarketQuotingController = ($scope: MarketQuotingScope,
-    $log: ng.ILogService,
-    subscriberFactory: Shared.SubscriberFactory) => {
+        $log: ng.ILogService,
+        subscriberFactory: Shared.SubscriberFactory,
+        product: Shared.ProductState) => {
+
+    var toPrice = (px: number) : string => px.toFixed(product.fixed);
+    var toPercent = (askPx: number, bidPx: number): string => ((askPx - bidPx) / askPx * 100).toFixed(2);
+
     var clearMarket = () => {
         $scope.levels = [];
     };
@@ -51,9 +56,14 @@ var MarketQuotingController = ($scope: MarketQuotingScope,
         $scope.qAskSz = null;
     };
 
+    var clearSpread = () => {
+        $scope.spreadValue = null;
+    }
+
     var clearQuote = () => {
         clearBid();
         clearAsk();
+        clearSpread();
     };
 
     var clearFairValue = () => {
@@ -78,14 +88,14 @@ var MarketQuotingController = ($scope: MarketQuotingScope,
         for (var i = 0; i < update.asks.length; i++) {
             if (angular.isUndefined($scope.levels[i]))
                 $scope.levels[i] = new Level();
-            $scope.levels[i].askPrice = update.asks[i].price;
+            $scope.levels[i].askPrice = toPrice(update.asks[i].price);
             $scope.levels[i].askSize = update.asks[i].size;
         }
 
         for (var i = 0; i < update.bids.length; i++) {
             if (angular.isUndefined($scope.levels[i]))
                 $scope.levels[i] = new Level();
-            $scope.levels[i].bidPrice = update.bids[i].price;
+            $scope.levels[i].bidPrice = toPrice(update.bids[i].price);
             $scope.levels[i].bidSize = update.bids[i].size;
         }
 
@@ -95,7 +105,7 @@ var MarketQuotingController = ($scope: MarketQuotingScope,
     var updateQuote = (quote: Models.TwoSidedQuote) => {
         if (quote !== null) {
             if (quote.bid !== null) {
-                $scope.qBidPx = quote.bid.price;
+                $scope.qBidPx = toPrice(quote.bid.price);
                 $scope.qBidSz = quote.bid.size;
             }
             else {
@@ -103,11 +113,20 @@ var MarketQuotingController = ($scope: MarketQuotingScope,
             }
 
             if (quote.ask !== null) {
-                $scope.qAskPx = quote.ask.price;
+                $scope.qAskPx = toPrice(quote.ask.price);
                 $scope.qAskSz = quote.ask.size;
             }
             else {
                 clearAsk();
+            }
+
+            if (quote.ask !== null && quote.bid !== null) {
+                const spreadAbsolutePrice = (quote.ask.price - quote.bid.price).toFixed(2);
+                const spreadPercent = toPercent(quote.ask.price, quote.bid.price);
+                $scope.spreadValue = `${spreadAbsolutePrice} / ${spreadPercent}%`;
+            }
+            else {
+                clearFairValue();
             }
         }
         else {
@@ -130,18 +149,17 @@ var MarketQuotingController = ($scope: MarketQuotingScope,
 
     var updateQuoteClass = () => {
         if (!angular.isUndefined($scope.levels) && $scope.levels.length > 0) {
-            var tol = .005;
             for (var i = 0; i < $scope.levels.length; i++) {
                 var level = $scope.levels[i];
 
-                if (Math.abs($scope.qBidPx - level.bidPrice) < tol && $scope.bidIsLive) {
+                if ($scope.qBidPx === level.bidPrice && $scope.bidIsLive) {
                     level.bidClass = 'success';
                 }
                 else {
                     level.bidClass = 'active';
                 }
 
-                if (Math.abs($scope.qAskPx - level.askPrice) < tol && $scope.askIsLive) {
+                if ($scope.qAskPx === level.askPrice && $scope.askIsLive) {
                     level.askClass = 'success';
                 }
                 else {
@@ -157,7 +175,7 @@ var MarketQuotingController = ($scope: MarketQuotingScope,
             return;
         }
 
-        $scope.fairValue = fv.price;
+        $scope.fairValue = toPrice(fv.price);
     };
 
     var subscribers = [];
@@ -165,7 +183,7 @@ var MarketQuotingController = ($scope: MarketQuotingScope,
     var makeSubscriber = <T>(topic: string, updateFn, clearFn) => {
         var sub = subscriberFactory.getSubscriber<T>($scope, topic)
             .registerSubscriber(updateFn, ms => ms.forEach(updateFn))
-            .registerDisconnectedHandler(clearFn);
+            .registerConnectHandler(clearFn);
         subscribers.push(sub);
     };
 

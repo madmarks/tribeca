@@ -23,9 +23,12 @@ export class MarketFiltration {
         this.FilteredMarketChanged.trigger();
     }
 
-    constructor(private _quoter: Quoter.Quoter,
+    constructor(
+        private _details: Interfaces.IBroker,
+        private _scheduler: Utils.IActionScheduler,
+        private _quoter: Quoter.Quoter,
         private _broker: Interfaces.IMarketDataBroker) {
-        _broker.MarketData.on(this.filterFullMarket);
+            _broker.MarketData.on(() => this._scheduler.schedule(this.filterFullMarket));
     }
 
     private filterFullMarket = () => {
@@ -56,7 +59,7 @@ export class MarketFiltration {
             for (var i = 0; i < copiedMkts.length; i++) {
                 var m = copiedMkts[i];
 
-                if (Math.abs(q.price - m.price) < .005) {
+                if (Math.abs(q.price - m.price) < this._details.minTickIncrement) {
                     copiedMkts[i].size = m.size - q.size;
                 }
             }

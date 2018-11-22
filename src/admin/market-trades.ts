@@ -1,4 +1,3 @@
-/// <reference path="../../typings/tsd.d.ts" />
 /// <reference path="../common/models.ts" />
 /// <reference path="../common/messaging.ts" />
 /// <reference path="shared_directives.ts"/>
@@ -28,37 +27,33 @@ class MarketTradeViewModel {
     make_side: string;
 
     constructor(trade: Models.MarketTrade) {
-        this.price = MarketTradeViewModel.round(trade.price);
-        this.size = MarketTradeViewModel.round(trade.size);
+        this.price = trade.price;
+        this.size = trade.size;
         this.time = (moment.isMoment(trade.time) ? trade.time : moment(trade.time));
 
         if (trade.quote != null) {
             if (trade.quote.ask !== null) {
-                this.qA = MarketTradeViewModel.round(trade.quote.ask.price);
-                this.qAz = MarketTradeViewModel.round(trade.quote.ask.size);
+                this.qA = trade.quote.ask.price;
+                this.qAz = trade.quote.ask.size;
             }
 
             if (trade.quote.bid !== null) {
-                this.qB = MarketTradeViewModel.round(trade.quote.bid.price);
-                this.qBz = MarketTradeViewModel.round(trade.quote.bid.size);
+                this.qB = trade.quote.bid.price;
+                this.qBz = trade.quote.bid.size;
             }
         }
 
         if (trade.ask != null) {
-            this.mA = MarketTradeViewModel.round(trade.ask.price);
-            this.mAz = MarketTradeViewModel.round(trade.ask.size);
+            this.mA = trade.ask.price;
+            this.mAz = trade.ask.size;
         }
 
         if (trade.bid != null) {
-            this.mB = MarketTradeViewModel.round(trade.bid.price);
-            this.mBz = MarketTradeViewModel.round(trade.bid.size);
+            this.mB = trade.bid.price;
+            this.mBz = trade.bid.size;
         }
 
         this.make_side = Models.Side[trade.make_side];
-    }
-
-    private static round(num: number) {
-        return Math.round(num * 100) / 100;
     }
 }
 
@@ -82,7 +77,7 @@ var MarketTradeGrid = ($scope: MarketTradeScope,
         sortInfo: { fields: ['time'], directions: ['desc'] },
         columnDefs: [
             { width: 80, field: 'time', displayName: 't', cellFilter: "momentShortDate",
-                sortingAlgorithm: (a: moment.Moment, b: moment.Moment) => a.diff(b),
+                sortingAlgorithm: Shared.fastDiff,
                 sort: { direction: uiGridConstants.DESC, priority: 1} },
             { width: 50, field: 'price', displayName: 'px' },
             { width: 40, field: 'size', displayName: 'sz' },
@@ -105,7 +100,7 @@ var MarketTradeGrid = ($scope: MarketTradeScope,
 
     var sub = subscriberFactory.getSubscriber($scope, Messaging.Topics.MarketTrade)
         .registerSubscriber(addNewMarketTrade, x => x.forEach(addNewMarketTrade))
-        .registerDisconnectedHandler(() => $scope.marketTrades.length = 0);
+        .registerConnectHandler(() => $scope.marketTrades.length = 0);
 
     $scope.$on('$destroy', () => {
         sub.disconnect();
@@ -120,7 +115,7 @@ export var marketTradeDirective = "marketTradeDirective";
 angular
     .module(marketTradeDirective, ['ui.bootstrap', 'ui.grid', Shared.sharedDirectives])
     .directive("marketTradeGrid", () => {
-        var template = '<div><div style="height: 180px" class="table table-striped table-hover table-condensed" ui-grid="marketTradeOptions"></div></div>';
+        var template = '<div><div style="height: 553px" class="table table-striped table-hover table-condensed" ui-grid="marketTradeOptions"></div></div>';
 
         return {
             restrict: 'E',

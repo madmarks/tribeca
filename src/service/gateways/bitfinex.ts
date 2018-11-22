@@ -1,4 +1,3 @@
-/// <reference path="../../../typings/tsd.d.ts" />
 /// <reference path="../utils.ts" />
 /// <reference path="../../common/models.ts" />
 /// <reference path="nullgw.ts" />
@@ -6,7 +5,6 @@
 ///<reference path="../utils.ts"/>
 ///<reference path="../interfaces.ts"/>
 
-import ws = require('ws');
 import Q = require("q");
 import crypto = require("crypto");
 import request = require("request");
@@ -20,6 +18,7 @@ import util = require("util");
 import Interfaces = require("../interfaces");
 import moment = require("moment");
 import _ = require("lodash");
+import log from "../logging";
 var shortId = require("shortid");
 var Deque = require("collections/deque");
 
@@ -79,7 +78,7 @@ class BitfinexMarketDataGateway implements Interfaces.IMarketDataGateway {
         _.forEach(trades.data, trade => {
             var px = parseFloat(trade.price);
             var sz = parseFloat(trade.amount);
-            var time = moment.unix(trade.timestamp);
+            var time = moment.unix(trade.timestamp).toDate();
             var side = decodeSide(trade.type);
             var mt = new Models.GatewayMarketTrade(px, sz, time, this._since === null, side);
             this.MarketTrade.trigger(mt);
@@ -200,25 +199,28 @@ interface BitfinexOrderStatusResponse extends RejectableResponse {
 }
 
 class BitfinexOrderEntryGateway implements Interfaces.IOrderEntryGateway {
-    OrderUpdate = new Utils.Evt<Models.OrderStatusReport>();
+    OrderUpdate = new Utils.Evt<Models.OrderStatusUpdate>();
     ConnectChanged = new Utils.Evt<Models.ConnectivityStatus>();
+
+    supportsCancelAllOpenOrders = () : boolean => { return false; };
+    cancelAllOpenOrders = () : Q.Promise<number> => { return Q(0); };
 
     generateClientOrderId = () => shortId.generate();
 
     public cancelsByClientOrderId = false;
 
-    private convertToOrderRequest = (order: Models.Order): BitfinexNewOrderRequest => {
+    private convertToOrderRequest = (order: Models.OrderStatusReport): BitfinexNewOrderRequest => {
         return {
-            amount: Utils.roundFloat(order.quantity).toString(),
+            amount: order.quantity.toString(),
             exchange: "bitfinex",
-            price: Utils.roundFloat(order.price).toString(),
+            price: order.price.toString(),
             side: encodeSide(order.side),
             symbol: this._symbolProvider.symbol,
             type: encodeTimeInForce(order.timeInForce, order.type)
         };
     }
 
-    sendOrder = (order: Models.BrokeredOrder): Models.OrderGatewayActionReport => {
+    sendOrder = (order: Models.OrderStatusReport) => {
         var req = this.convertToOrderRequest(order);
 
         this._http
@@ -242,10 +244,13 @@ class BitfinexOrderEntryGateway implements Interfaces.IOrderEntryGateway {
                 });
             }).done();
 
-        return new Models.OrderGatewayActionReport(Utils.date());
+        this.OrderUpdate.trigger({
+            orderId: order.orderId,
+            computationalLatency: Utils.fastDiff(new Date(), order.time)
+        });
     };
 
-    cancelOrder = (cancel: Models.BrokeredCancel): Models.OrderGatewayActionReport => {
+    cancelOrder = (cancel: Models.OrderStatusReport) => {
         var req = { order_id: cancel.exchangeId };
         this._http
             .post<BitfinexCancelOrderRequest, any>("order/cancel", req)
@@ -254,7 +259,7 @@ class BitfinexOrderEntryGateway implements Interfaces.IOrderEntryGateway {
                     this.OrderUpdate.trigger({
                         orderStatus: Models.OrderStatus.Rejected,
                         cancelRejected: true,
-                        orderId: cancel.clientOrderId,
+                        orderId: cancel.orderId,
                         rejectMessage: resp.data.message,
                         time: resp.time
                     });
@@ -262,19 +267,22 @@ class BitfinexOrderEntryGateway implements Interfaces.IOrderEntryGateway {
                 }
 
                 this.OrderUpdate.trigger({
-                    orderId: cancel.clientOrderId,
+                    orderId: cancel.orderId,
                     time: resp.time,
                     orderStatus: Models.OrderStatus.Cancelled
                 });
             })
             .done();
 
-        return new Models.OrderGatewayActionReport(Utils.date());
+        this.OrderUpdate.trigger({
+            orderId: cancel.orderId,
+            computationalLatency: Utils.fastDiff(new Date(), cancel.time)
+        });
     };
 
-    replaceOrder = (replace: Models.BrokeredReplace): Models.OrderGatewayActionReport => {
-        this.cancelOrder(new Models.BrokeredCancel(replace.origOrderId, replace.orderId, replace.side, replace.exchangeId));
-        return this.sendOrder(replace);
+    replaceOrder = (replace: Models.OrderStatusReport) => {
+        this.cancelOrder(replace);
+        this.sendOrder(replace);
     };
 
     private downloadOrderStatuses = () => {
@@ -315,8 +323,10 @@ class BitfinexOrderEntryGateway implements Interfaces.IOrderEntryGateway {
     }
 
     private _since = moment.utc();
-    private _log: Utils.Logger = Utils.log("tribeca:gateway:BitfinexOE");
-    constructor(timeProvider: Utils.ITimeProvider,
+    private _log = log("tribeca:gateway:BitfinexOE");
+    constructor(
+        timeProvider: Utils.ITimeProvider,
+        private _details: BitfinexBaseGateway,
         private _http: BitfinexHttp,
         private _symbolProvider: BitfinexSymbolProvider) {
 
@@ -327,6 +337,8 @@ class BitfinexOrderEntryGateway implements Interfaces.IOrderEntryGateway {
 
 
 class RateLimitMonitor {
+    private _log = log("tribeca:gateway:rlm");
+    
     private _queue = Deque();
     private _durationMs: number;
 
@@ -340,7 +352,7 @@ class RateLimitMonitor {
         this._queue.push(now);
 
         if (this._queue.length > this._number) {
-            Utils.errorLog("Exceeded rate limit", { nRequests: this._queue.length, max: this._number, durationMs: this._durationMs });
+            this._log.error("Exceeded rate limit", { nRequests: this._queue.length, max: this._number, durationMs: this._durationMs });
         }
     }
 
@@ -354,15 +366,16 @@ class BitfinexHttp {
 
     private _timeout = 15000;
 
-    get = <T>(actionUrl: string, qs: any = undefined): Q.Promise<Models.Timestamped<T>> => {
+    get = <T>(actionUrl: string, qs?: any): Q.Promise<Models.Timestamped<T>> => {
+        const url = this._baseUrl + "/" + actionUrl;
         var opts = {
             timeout: this._timeout,
-            url: this._baseUrl + "/" + actionUrl,
-            qs: qs,
+            url: url,
+            qs: qs || undefined,
             method: "GET"
         };
 
-        return this.doRequest<T>(opts);
+        return this.doRequest<T>(opts, url);
     };
     
     // Bitfinex seems to have a race condition where nonces are processed out of order when rapidly placing orders
@@ -385,9 +398,10 @@ class BitfinexHttp {
         var payload = new Buffer(JSON.stringify(msg)).toString("base64");
         var signature = crypto.createHmac("sha384", this._secret).update(payload).digest('hex');
 
+        const url = this._baseUrl + "/" + actionUrl;
         var opts: request.Options = {
             timeout: this._timeout,
-            url: this._baseUrl + "/" + actionUrl,
+            url: url,
             headers: {
                 "X-BFX-APIKEY": this._apiKey,
                 "X-BFX-PAYLOAD": payload,
@@ -396,26 +410,26 @@ class BitfinexHttp {
             method: "POST"
         };
 
-        return this.doRequest<TResponse>(opts);
+        return this.doRequest<TResponse>(opts, url);
     };
 
-    private doRequest = <TResponse>(msg: request.Options): Q.Promise<Models.Timestamped<TResponse>> => {
+    private doRequest = <TResponse>(msg: request.Options, url: string): Q.Promise<Models.Timestamped<TResponse>> => {
         var d = Q.defer<Models.Timestamped<TResponse>>();
 
         this._monitor.add();
         request(msg, (err, resp, body) => {
             if (err) {
-                this._log("Error returned: url=", msg.url, "err=", err);
+                this._log.error(err, "Error returned: url=", url, "err=", err);
                 d.reject(err);
             }
             else {
                 try {
-                    var t = Utils.date();
+                    var t = new Date();
                     var data = JSON.parse(body);
                     d.resolve(new Models.Timestamped(data, t));
                 }
                 catch (err) {
-                    this._log("Error parsing JSON url=", msg.url, "err=", err, ", body=", body);
+                    this._log.error(err, "Error parsing JSON url=", url, "err=", err, ", body=", body);
                     d.reject(err);
                 }
             }
@@ -424,7 +438,7 @@ class BitfinexHttp {
         return d.promise;
     };
 
-    private _log: Utils.Logger = Utils.log("tribeca:gateway:BitfinexHTTP");
+    private _log = log("tribeca:gateway:BitfinexHTTP");
     private _baseUrl: string;
     private _apiKey: string;
     private _secret: string;
@@ -436,7 +450,7 @@ class BitfinexHttp {
         this._secret = config.GetString("BitfinexSecret");
 
         this._nonce = new Date().valueOf();
-        this._log("Starting nonce: ", this._nonce);
+        this._log.info("Starting nonce: ", this._nonce);
         setTimeout(() => this.ConnectChanged.trigger(Models.ConnectivityStatus.Connected), 10);
     }
 }
@@ -455,7 +469,7 @@ class BitfinexPositionGateway implements Interfaces.IPositionGateway {
         this._http.post<{}, BitfinexPositionResponseItem[]>("balances", {}).then(res => {
             _.forEach(_.filter(res.data, x => x.type === "exchange"), p => {
                 var amt = parseFloat(p.amount);
-                var cur = GetCurrencyEnum(p.currency);
+                var cur = Models.toCurrency(p.currency);
                 var held = amt - parseFloat(p.available);
                 var rpt = new Models.CurrencyPosition(amt, held, cur);
                 this.PositionUpdate.trigger(rpt);
@@ -463,7 +477,7 @@ class BitfinexPositionGateway implements Interfaces.IPositionGateway {
         }).done();
     }
 
-    private _log: Utils.Logger = Utils.log("tribeca:gateway:BitfinexPG");
+    private _log = log("tribeca:gateway:BitfinexPG");
     constructor(timeProvider: Utils.ITimeProvider, private _http: BitfinexHttp) {
         timeProvider.setInterval(this.onRefreshPositions, moment.duration(15, "seconds"));
         this.onRefreshPositions();
@@ -491,55 +505,54 @@ class BitfinexBaseGateway implements Interfaces.IExchangeDetailsGateway {
         return Models.Exchange.Bitfinex;
     }
 
-    private static AllPairs = [
-        new Models.CurrencyPair(Models.Currency.BTC, Models.Currency.USD),
-        //new Models.CurrencyPair(Models.Currency.LTC, Models.Currency.USD),
-    ];
-    public get supportedCurrencyPairs() {
-        return BitfinexBaseGateway.AllPairs;
-    }
-}
-
-function GetCurrencyEnum(c: string): Models.Currency {
-    switch (c.toLowerCase()) {
-        case "usd": return Models.Currency.USD;
-        case "ltc": return Models.Currency.LTC;
-        case "btc": return Models.Currency.BTC;
-        default: throw new Error("Unsupported currency " + c);
-    }
-}
-
-function GetCurrencySymbol(c: Models.Currency): string {
-    switch (c) {
-        case Models.Currency.USD: return "usd";
-        case Models.Currency.LTC: return "ltc";
-        case Models.Currency.BTC: return "btc";
-        default: throw new Error("Unsupported currency " + Models.Currency[c]);
-    }
+    constructor(public minTickIncrement: number) {} 
 }
 
 class BitfinexSymbolProvider {
     public symbol: string;
 
     constructor(pair: Models.CurrencyPair) {
-        this.symbol = GetCurrencySymbol(pair.base) + GetCurrencySymbol(pair.quote);
+        this.symbol = Models.fromCurrency(pair.base).toLowerCase() + Models.fromCurrency(pair.quote).toLowerCase();
     }
 }
 
-export class Bitfinex extends Interfaces.CombinedGateway {
-    constructor(timeProvider: Utils.ITimeProvider, config: Config.IConfigProvider, pair: Models.CurrencyPair) {
-        var symbol = new BitfinexSymbolProvider(pair);
-        var monitor = new RateLimitMonitor(60, moment.duration(1, "minutes"));
-        var http = new BitfinexHttp(config, monitor);
-
-        var orderGateway = config.GetString("BitfinexOrderDestination") == "Bitfinex"
-            ? <Interfaces.IOrderEntryGateway>new BitfinexOrderEntryGateway(timeProvider, http, symbol)
+class Bitfinex extends Interfaces.CombinedGateway {
+    constructor(timeProvider: Utils.ITimeProvider, config: Config.IConfigProvider, symbol: BitfinexSymbolProvider, pricePrecision: number) {
+        const monitor = new RateLimitMonitor(60, moment.duration(1, "minutes"));
+        const http = new BitfinexHttp(config, monitor);
+        const details = new BitfinexBaseGateway(pricePrecision);
+        
+        const orderGateway = config.GetString("BitfinexOrderDestination") == "Bitfinex"
+            ? <Interfaces.IOrderEntryGateway>new BitfinexOrderEntryGateway(timeProvider, details, http, symbol)
             : new NullGateway.NullOrderGateway();
 
         super(
             new BitfinexMarketDataGateway(timeProvider, http, symbol),
             orderGateway,
             new BitfinexPositionGateway(timeProvider, http),
-            new BitfinexBaseGateway());
+            details);
     }
+}
+
+interface SymbolDetails {
+    pair: string,
+    price_precision: number,
+    initial_margin:string,
+    minimum_margin:string,
+    maximum_order_size:string,
+    minimum_order_size:string,
+    expiration:string
+}
+
+export async function createBitfinex(timeProvider: Utils.ITimeProvider, config: Config.IConfigProvider, pair: Models.CurrencyPair) : Promise<Interfaces.CombinedGateway> {
+    const detailsUrl = config.GetString("BitfinexHttpUrl")+"/symbols_details";
+    const symbolDetails = await Utils.getJSON<SymbolDetails[]>(detailsUrl);
+    const symbol = new BitfinexSymbolProvider(pair);    
+
+    for (let s of symbolDetails) {
+        if (s.pair === symbol.symbol)
+            return new Bitfinex(timeProvider, config, symbol, 10**(-1*s.price_precision));
+    }
+
+    throw new Error("cannot match pair to a Bitfinex Symbol " + pair.toString());
 }

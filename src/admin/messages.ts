@@ -1,4 +1,3 @@
-/// <reference path="../../typings/tsd.d.ts" />
 /// <reference path="../common/models.ts" />
 /// <reference path="../common/messaging.ts" />
 ///<reference path="shared_directives.ts"/>
@@ -32,7 +31,7 @@ var MessagesController = ($scope: MessageLoggerScope, $log: ng.ILogService, subs
         showGroupPanel: false,
         rowHeight: 20,
         headerRowHeight: 0,
-        hideHeader: true,
+        showHeader: false,
         groupsCollapsedByDefault: true,
         enableColumnResize: true,
         sortInfo: { fields: ['time'], directions: ['desc'] },
@@ -48,7 +47,7 @@ var MessagesController = ($scope: MessageLoggerScope, $log: ng.ILogService, subs
 
     var sub = subscriberFactory.getSubscriber($scope, Messaging.Topics.Message)
         .registerSubscriber(addNewMessage, x => x.forEach(addNewMessage))
-        .registerDisconnectedHandler(() => $scope.messages.length = 0);
+        .registerConnectHandler(() => $scope.messages.length = 0);
 
     $scope.$on('$destroy', () => {
         sub.disconnect();
@@ -63,7 +62,7 @@ export var messagesDirective = "messagesDirective";
 angular
     .module(messagesDirective, ['ui.bootstrap', 'ui.grid', Shared.sharedDirectives])
     .directive("messagesGrid", () => {
-        var template = '<div><div style="height: 50px" class="table table-striped table-hover table-condensed" ui-grid="messageOptions"></div></div>';
+        var template = '<div><div style="height: 75px" class="table table-striped table-hover table-condensed" ui-grid="messageOptions"></div></div>';
 
         return {
             restrict: 'E',

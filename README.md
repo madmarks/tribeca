@@ -6,27 +6,35 @@
 
 ![Web UI Preview](https://raw.githubusercontent.com/michaelgrosner/tribeca/master/docs/web_ui_preview.png)
 
-It runs on v0.12 nodejs or the latest io.js. Persistence is acheived using mongodb. Installation is recommended via Docker, but manual installation everything is also supported.
+Runs on the latest node.js (v7.8 or greater). Persistence is acheived using mongodb. Installation is recommended via Docker, but manual installation is also supported.
+
+### Docker compose installation
+
+1. Install [docker compose](https://docs.docker.com/compose/install/).
+
+2. Change the environment variables of `env` file to match your desired [configuration](https://github.com/michaelgrosner/tribeca#configuration). Input your exchange connectivity information, account information, and mongoDB credentials.
+
+3. Run `docker-compose up -d --build`. If you run `docker-compose ps`, you should see the containers running.
 
 ### Docker Installation
 
-1. Please install [docker](https://www.docker.com/) for your system before preceeding. Requires at least Docker 1.7.1. Mac/Windows only: Ensure boot2docker is already running. See [the docs](https://docs.docker.com/installation/mac/) for more help.
+1. Please install [docker](https://www.docker.com/) for your system before preceeding. Requires at least Docker 1.7.1. Mac/Windows only: Ensure boot2docker or docker-machine is set up, depending on Docker version. See [the docs](https://docs.docker.com/installation/mac/) for more help.
 
 2. Set up mongodb. If you do not have a mongodb instance already running: `docker run -p 27017:27017 --name tribeca-mongo -d mongo`.
 
-3. Copy the repository [Dockerfile](https://raw.githubusercontent.com/michaelgrosner/tribeca/master/Dockerfile) into a text editor. Change the environment variables to match your desired [configuration](https://github.com/michaelgrosner/tribeca#configuration). Input your exchange connectivity information, account information, and mongoDB credentials.
+2. Change the environment variables of `env` file to match your desired [configuration](https://github.com/michaelgrosner/tribeca#configuration). Input your exchange connectivity information, account information, and mongoDB credentials.
 
 4. Save the Dockerfile, preferably in a secure location and in an empty directory. Build the image from the Dockerfile `docker build -t tribeca .`
 
-5. Run the container `docker run -p 3000:3000 --link tribeca-mongo:mongo --name tribeca -d tribeca`. If you run `docker ps`, you should see tribeca and mongo containers running.
+5. Run the container `docker run -p 3000:3000 --link tribeca-mongo:mongo --env-file ./env --name tribeca -d tribeca`. If you run `docker ps`, you should see tribeca and mongo containers running.
 
 ### Manual Installation
 
-1. Ensure your target machine has node v0.12 or greater and mongoDB v3 or greater. Also, ensure Typescript 1.5, grunt, tsd, and, optionally, forever are installed (`npm install -g grunt-cli typescript tsd forever`).
+1. Ensure your target machine has node v7.8 (or greater) and mongoDB v3 or greater. Also, ensure Typescript 2.2, grunt, and, optionally, forever are installed (`npm install -g grunt-cli typescript forever`).
 
 2. Clone the repository.
 
-3. In the cloned repository directory, `npm install` and then `tsd reinstall -s` to pull in all dependencies.
+3. In the cloned repository directory, run `npm install` to pull in all dependencies.
 
 4. Compile typescript to javascript via `grunt compile`.
 
@@ -59,14 +67,41 @@ It runs on v0.12 nodejs or the latest io.js. Persistence is acheived using mongo
     2. `dev`
     
   * MongoDbUrl - If you are on OS X, change "tribeca-mongo" in the URL to the output of `boot2docker ip` on your host machine. If you are running an existing mongoDB instance, replace the URL with the existing instance's URL. If you are running from a Linux machine and set up mongo in step 1, you should not have to modify anything.
+
+  * ShowAllOrders - Show all orders sent from the application in the Orders List in the UI. This is useful for debugging/testing, but can really negatively impact performance during real trading.
   
-  * TradedPair - The following currency pairs are supported on these exchanges:
+  * TradedPair - Any combination of the following currencies are supported, if the target EXCHANGE supports trading the currency pair:
   
-    1. `BTC/USD` - Coinbase, HitBtc, OkCoin, Null
-    
-    2. `BTC/EUR` - Coinbase, HitBtc, Null
-    
-    3. `BTC/GBP` - Coinbase, Null
+    - USD
+    - BTC
+    - LTC
+    - EUR
+    - GBP
+    - CNY
+    - ETH
+    - BFX
+    - RRT
+    - ZEC
+    - BCN
+    - DASH
+    - DOGE
+    - DSH
+    - EMC
+    - FCN
+    - LSK
+    - NXT
+    - QCN
+    - SDB
+    - SCB
+    - STEEM
+    - XDN
+    - XEM
+    - XMR
+    - ARDR
+    - WAVES
+    - BTU
+    - MAID
+    - AMP
     
   * WebClientUsername and WebClientPassword - Username and password for [web UI](https://github.com/michaelgrosner/tribeca#web-ui) access. If kept as `NULL`, no the web client will not require authentication (Not recommended at all!!)
 

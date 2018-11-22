@@ -1,4 +1,3 @@
-/// <reference path="../../typings/tsd.d.ts" />
 /// <reference path="../common/models.ts" />
 /// <reference path="shared_directives.ts"/>
 
@@ -98,22 +97,22 @@ var OrderListController = ($scope: OrderListScope,
         headerRowHeight: 20,
         columnDefs: [
             { width: 120, field: 'time', displayName: 'time', cellFilter: "momentFullDate", 
-                sortingAlgorithm: (a: moment.Moment, b: moment.Moment) => a.diff(b),
+                sortingAlgorithm: Shared.fastDiff,
                 sort: { direction: uiGridConstants.DESC, priority: 1} },
             { width: 90, field: 'orderId', displayName: 'id' },
             { width: 35, field: 'version', displayName: 'v' },
             { width: 120, field: 'orderStatus', displayName: 'status' },
-            { width: 65, field: 'price', displayName: 'px', cellFilter: 'currency' },
+            { width: 65, field: 'price', displayName: 'px' },
             { width: 60, field: 'quantity', displayName: 'qty' },
             { width: 50, field: 'side', displayName: 'side' },
             { width: 50, field: 'orderType', displayName: 'type' },
             { width: 50, field: 'tif', displayName: 'tif' },
             { width: 35, field: 'computationalLatency', displayName: 'lat' },
             { width: 60, field: 'lastQuantity', displayName: 'lQty' },
-            { width: 65, field: 'lastPrice', displayName: 'lPx', cellFilter: 'currency' },
+            { width: 65, field: 'lastPrice', displayName: 'lPx' },
             { width: 60, field: 'leavesQuantity', displayName: 'lvQty' },
             { width: 60, field: 'cumQuantity', displayName: 'cum' },
-            { width: 65, field: 'averagePrice', displayName: 'avg', cellFilter: 'currency' },
+            { width: 65, field: 'averagePrice', displayName: 'avg' },
             { width: 40, field: 'liquidity', displayName: 'liq' },
             { width: "*", field: 'rejectMessage', displayName: 'msg' },
             { width: 40, name: "cancel", displayName: 'cxl', cellTemplate: '<button type="button" class="btn btn-danger btn-xs" ng-click="row.entity.cancel()"><span class="glyphicon glyphicon-remove"></span></button>' },
@@ -142,7 +141,6 @@ var OrderListController = ($scope: OrderListScope,
 
     var sub = subscriberFactory.getSubscriber($scope, Messaging.Topics.OrderStatusReports)
         .registerConnectHandler(clear)
-        .registerDisconnectedHandler(clear)
         .registerSubscriber(addOrderRpt, os => os.forEach(addOrderRpt));
 
     $scope.$on('$destroy', () => {
@@ -154,7 +152,7 @@ var OrderListController = ($scope: OrderListScope,
 };
 
 var orderList = (): ng.IDirective => {
-    var template = '<div><div ui-grid="gridOptions" ui-grid-grouping class="table table-striped table-hover table-condensed" style="height: 400px"></div></div>';
+    var template = '<div><div ui-grid="gridOptions" ui-grid-grouping class="table table-striped table-hover table-condensed" style="height: 150px"></div></div>';
 
     return {
         template: template,
